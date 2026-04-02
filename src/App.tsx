@@ -38,6 +38,8 @@ import {
   updateDoc, 
   deleteDoc, 
   doc, 
+  getDoc,
+  setDoc,
   query, 
   orderBy, 
   limit,
@@ -83,7 +85,16 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Clear notification after 5 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   // Auth Listener
   useEffect(() => {
@@ -95,10 +106,16 @@ export default function App() {
         // Ensure user profile exists in Firestore
         try {
           const userRef = doc(db, 'users', user.uid);
-          const userSnap = await getDocs(query(collection(db, 'users'), limit(1))); // Just a check
-          // Actually we should just try to set it if it doesn't exist or update it
-          // But for now, let's just ensure we have a way to identify admins
-          // The rules already handle the default admin by email.
+          const userSnap = await getDoc(userRef);
+          
+          if (!userSnap.exists()) {
+            await setDoc(userRef, {
+              email: user.email,
+              displayName: user.displayName || 'User',
+              role: user.email === "bupeshkattri0@gmail.com" ? 'admin' : 'user',
+              createdAt: new Date().toISOString()
+            });
+          }
         } catch (e) {
           console.error("Error checking user profile", e);
         }
@@ -179,12 +196,19 @@ export default function App() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    // window.confirm doesn't work well in iframes, using a simpler approach for now
+    if (!user) {
+      setNotification({ type: 'error', message: 'You must be logged in to delete items.' });
+      return;
+    }
+
     try {
       await deleteDoc(doc(db, 'products', id));
       setIsProductModalOpen(false);
       setEditingProduct(null);
+      setNotification({ type: 'success', message: 'Product deleted successfully.' });
     } catch (error) {
+      console.error("Delete failed:", error);
+      setNotification({ type: 'error', message: 'Failed to delete product. Please check your permissions.' });
       handleFirestoreError(error, OperationType.DELETE, 'products');
     }
   };
@@ -271,6 +295,20 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {/* Notifications */}
+      {notification && (
+        <div className={cn(
+          "fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right-full duration-300",
+          notification.type === 'success' ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
+        )}>
+          {notification.type === 'success' ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
+          <p className="font-medium">{notification.message}</p>
+          <button onClick={() => setNotification(null)} className="ml-4 p-1 hover:bg-white/20 rounded-full transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside 
         className={cn(
