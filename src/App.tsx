@@ -22,7 +22,12 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  History
+  History,
+  ArrowDownRight,
+  User as UserIcon,
+  Shield,
+  Building2,
+  Globe
 } from 'lucide-react';
 import { 
   onAuthStateChanged, 
@@ -68,8 +73,10 @@ import {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'alerts' | 'predictions' | 'chat'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'alerts' | 'predictions' | 'chat' | 'settings'>('dashboard');
+  const [selectedProductType, setSelectedProductType] = useState<'all' | 'medicine' | 'electronics' | 'general'>('all');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   // Data State
@@ -109,12 +116,19 @@ export default function App() {
           const userSnap = await getDoc(userRef);
           
           if (!userSnap.exists()) {
-            await setDoc(userRef, {
+            const initialProfile = {
               email: user.email,
               displayName: user.displayName || 'User',
               role: user.email === "bupeshkattri0@gmail.com" ? 'admin' : 'user',
-              createdAt: new Date().toISOString()
-            });
+              createdAt: new Date().toISOString(),
+              pharmacyName: 'StockSage Medical Center',
+              warningThreshold: 90,
+              currency: 'USD ($)'
+            };
+            await setDoc(userRef, initialProfile);
+            setUserProfile(initialProfile);
+          } else {
+            setUserProfile(userSnap.data());
           }
         } catch (e) {
           console.error("Error checking user profile", e);
@@ -293,6 +307,31 @@ export default function App() {
   const lowStockItems = products.filter(p => p.currentStock <= p.reorderPoint);
   const outOfStockItems = products.filter(p => p.currentStock === 0);
 
+  // Calculate sales by type
+  const salesByType = transactions
+    .filter(t => t.type === 'out')
+    .reduce((acc, t) => {
+      const product = products.find(p => p.id === t.productId);
+      if (product) {
+        acc[product.type] = (acc[product.type] || 0) + t.quantity;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+  const totalSold = Object.values(salesByType).reduce((a, b) => a + b, 0);
+
+  const handleUpdateProfile = async (updates: any) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, updates);
+      setUserProfile(prev => ({ ...prev, ...updates }));
+      setNotification({ type: 'success', message: 'Profile updated successfully!' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'users');
+    }
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
       {/* Notifications */}
@@ -355,7 +394,15 @@ export default function App() {
         </nav>
 
         <div className="p-4 border-t border-slate-100 space-y-2">
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-slate-900 transition-colors">
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 transition-colors rounded-lg",
+              activeTab === 'settings' 
+                ? "bg-indigo-50 text-indigo-700 font-medium" 
+                : "text-slate-500 hover:text-slate-900"
+            )}
+          >
             <Settings size={20} />
             {isSidebarOpen && <span>Settings</span>}
           </button>
@@ -446,7 +493,7 @@ export default function App() {
                     { label: 'Total Items', value: products.length, icon: Package, color: 'indigo' },
                     { label: 'Low Stock', value: lowStockItems.length, icon: AlertTriangle, color: 'amber' },
                     { label: 'Out of Stock', value: outOfStockItems.length, icon: X, color: 'red' },
-                    { label: 'Shortage Risk', value: predictions.filter(p => p.confidence > 0.6).length, icon: TrendingUp, color: 'rose' },
+                    { label: 'Total Sold', value: totalSold, icon: ArrowDownRight, color: 'emerald' },
                   ].map((stat, i) => (
                     <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-4">
@@ -456,6 +503,7 @@ export default function App() {
                           stat.color === 'amber' && "bg-amber-50 text-amber-600",
                           stat.color === 'red' && "bg-red-50 text-red-600",
                           stat.color === 'rose' && "bg-rose-50 text-rose-600",
+                          stat.color === 'emerald' && "bg-emerald-50 text-emerald-600",
                         )}>
                           <stat.icon size={24} />
                         </div>
@@ -466,10 +514,20 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Charts */}
+                {/* Charts & Sales Breakdown */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm min-h-[400px]">
-                    <h3 className="font-bold text-slate-900 mb-6">Stock Levels by Category</h3>
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="font-bold text-slate-900">Stock Levels by Category</h3>
+                      <div className="flex gap-4">
+                        {Object.entries(salesByType).map(([type, count]) => (
+                          <div key={type} className="text-right">
+                            <p className="text-[10px] text-slate-400 uppercase font-bold">{type} Sold</p>
+                            <p className="text-sm font-bold text-slate-900">{count}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     <div className="h-80">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={products.slice(0, 8)}>
@@ -529,12 +587,12 @@ export default function App() {
 
             {activeTab === 'inventory' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold">Inventory List</h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-bold">Inventory Management</h2>
+                    <p className="text-slate-500 text-sm">Manage and track your stock across different categories.</p>
+                  </div>
                   <div className="flex gap-3">
-                    <button className="p-2 text-slate-500 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 rounded-lg transition-all">
-                      <History size={20} />
-                    </button>
                     <button 
                       onClick={() => {
                         setEditingProduct(null);
@@ -547,8 +605,27 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* Type Switcher */}
+                <div className="flex p-1 bg-slate-100 rounded-xl w-fit">
+                  {(['all', 'medicine', 'electronics', 'general'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setSelectedProductType(type)}
+                      className={cn(
+                        "px-6 py-2 rounded-lg text-sm font-bold transition-all capitalize",
+                        selectedProductType === type 
+                          ? "bg-white text-indigo-600 shadow-sm" 
+                          : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+
                 <InventoryList 
-                  products={products} 
+                  products={products.filter(p => selectedProductType === 'all' || p.type === selectedProductType)} 
                   onEdit={(p) => {
                     setEditingProduct(p);
                     setIsProductModalOpen(true);
@@ -642,6 +719,104 @@ export default function App() {
                       </p>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'settings' && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Settings</h2>
+                  <p className="text-slate-500 mt-1">Manage your profile and system preferences.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Personal Details */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                      <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                        <UserIcon size={20} />
+                      </div>
+                      <h3 className="font-bold text-slate-900">Personal Details</h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Full Name</label>
+                        <input 
+                          type="text" 
+                          value={userProfile?.displayName || ''} 
+                          onChange={(e) => handleUpdateProfile({ displayName: e.target.value })}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Email Address</label>
+                        <input 
+                          type="email" 
+                          disabled
+                          value={userProfile?.email || ''} 
+                          className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-500 cursor-not-allowed"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Role</label>
+                        <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-500 capitalize">
+                          <Shield size={14} />
+                          {userProfile?.role || 'User'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* System Management */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                      <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                        <Building2 size={20} />
+                      </div>
+                      <h3 className="font-bold text-slate-900">System Management</h3>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Pharmacy/Store Name</label>
+                        <input 
+                          type="text" 
+                          value={userProfile?.pharmacyName || ''} 
+                          onChange={(e) => handleUpdateProfile({ pharmacyName: e.target.value })}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Default Currency</label>
+                        <div className="relative">
+                          <Globe size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <select 
+                            value={userProfile?.currency || 'USD ($)'}
+                            onChange={(e) => handleUpdateProfile({ currency: e.target.value })}
+                            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm appearance-none"
+                          >
+                            <option>USD ($)</option>
+                            <option>EUR (€)</option>
+                            <option>GBP (£)</option>
+                            <option>INR (₹)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Expiry Warning Threshold (Days)</label>
+                        <input 
+                          type="number" 
+                          value={userProfile?.warningThreshold || 90} 
+                          onChange={(e) => handleUpdateProfile({ warningThreshold: parseInt(e.target.value) })}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

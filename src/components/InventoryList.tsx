@@ -16,10 +16,9 @@ export function InventoryList({ products, onEdit }: InventoryListProps) {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Product</th>
-              <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">SKU</th>
-              <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Category</th>
+              <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Form</th>
               <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Stock</th>
-              <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Price</th>
+              <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Expiry</th>
               <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
               <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
@@ -33,11 +32,21 @@ export function InventoryList({ products, onEdit }: InventoryListProps) {
                 <tr key={product.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="font-medium text-slate-900">{product.name}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-tighter">{product.sku}</div>
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest",
+                        product.type === 'medicine' ? "bg-rose-50 text-rose-600 border border-rose-100" :
+                        product.type === 'electronics' ? "bg-blue-50 text-blue-600 border border-blue-100" :
+                        "bg-slate-50 text-slate-500 border border-slate-100"
+                      )}>
+                        {product.type}
+                      </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-slate-500 font-mono text-xs">{product.sku}</td>
                   <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium">
-                      {product.category}
+                    <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                      {product.dosageForm || 'N/A'}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -48,10 +57,16 @@ export function InventoryList({ products, onEdit }: InventoryListProps) {
                       )}>
                         {product.currentStock}
                       </span>
-                      <span className="text-slate-400 text-xs">/ {product.reorderPoint} min</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-slate-600">${product.unitPrice.toFixed(2)}</td>
+                  <td className="px-6 py-4">
+                    <div className={cn(
+                      "text-xs font-medium",
+                      product.expiryDate && new Date(product.expiryDate) < new Date() ? "text-red-600" : "text-slate-500"
+                    )}>
+                      {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : 'N/A'}
+                    </div>
+                  </td>
                   <td className="px-6 py-4">
                     <span className={cn(
                       "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium",

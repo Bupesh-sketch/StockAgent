@@ -15,10 +15,16 @@ export function ProductModal({ product, isOpen, onClose, onSave, onDelete }: Pro
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
     category: '',
+    type: 'general',
     currentStock: 0,
     reorderPoint: 5,
     unitPrice: 0,
     sku: '',
+    expiryDate: '',
+    batchNumber: '',
+    requiresPrescription: false,
+    isColdChain: false,
+    dosageForm: 'Tablet',
   });
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -31,10 +37,16 @@ export function ProductModal({ product, isOpen, onClose, onSave, onDelete }: Pro
       setFormData({
         name: '',
         category: '',
+        type: 'general',
         currentStock: 0,
         reorderPoint: 5,
         unitPrice: 0,
         sku: `SKU-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+        expiryDate: '',
+        batchNumber: '',
+        requiresPrescription: false,
+        isColdChain: false,
+        dosageForm: 'Tablet',
       });
     }
   }, [product, isOpen]);
@@ -88,17 +100,92 @@ export function ProductModal({ product, isOpen, onClose, onSave, onDelete }: Pro
             e.preventDefault();
             onSave(formData);
           }}>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Product Name</label>
-              <input
-                type="text"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                placeholder="e.g. Wireless Mouse"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Product Name</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                  placeholder="e.g. Wireless Mouse"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Product Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                >
+                  <option value="general">General</option>
+                  <option value="medicine">Medicine</option>
+                  <option value="electronics">Electronics</option>
+                </select>
+              </div>
             </div>
+
+            {formData.type === 'medicine' && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Dosage Form</label>
+                    <select
+                      value={formData.dosageForm}
+                      onChange={(e) => setFormData({ ...formData, dosageForm: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                    >
+                      {['Tablet', 'Capsule', 'Syrup', 'Injection', 'Ointment', 'Drops', 'Inhaler'].map(form => (
+                        <option key={form} value={form}>{form}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Batch Number</label>
+                    <input
+                      type="text"
+                      value={formData.batchNumber}
+                      onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                      placeholder="e.g. B-2024-001"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Expiry Date</label>
+                    <input
+                      type="date"
+                      value={formData.expiryDate}
+                      onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2 pt-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.requiresPrescription}
+                        onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
+                        className="w-4 h-4 rounded text-indigo-600"
+                      />
+                      <span className="text-xs font-bold text-slate-700">Rx Required</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.isColdChain}
+                        onChange={(e) => setFormData({ ...formData, isColdChain: e.target.checked })}
+                        className="w-4 h-4 rounded text-indigo-600"
+                      />
+                      <span className="text-xs font-bold text-slate-700">Cold Chain</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -109,7 +196,7 @@ export function ProductModal({ product, isOpen, onClose, onSave, onDelete }: Pro
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                  placeholder="Electronics"
+                  placeholder="e.g. Peripherals"
                 />
               </div>
               <div className="space-y-1">

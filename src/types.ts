@@ -2,11 +2,18 @@ export interface Product {
   id: string;
   name: string;
   category: string;
+  type: 'medicine' | 'electronics' | 'general';
   currentStock: number;
   reorderPoint: number;
   unitPrice: number;
   lastRestocked: string; // ISO date
   sku: string;
+  // Medical specific fields
+  expiryDate?: string;
+  batchNumber?: string;
+  requiresPrescription?: boolean;
+  isColdChain?: boolean;
+  dosageForm?: string; // e.g., Tablet, Syrup, Injection
 }
 
 export interface Transaction {
