@@ -83,7 +83,7 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && isValidProduct(request.resource.data);
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated();
     }
 
     match /transactions/{transactionId} {
