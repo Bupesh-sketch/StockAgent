@@ -1,0 +1,5 @@
+{
+  "name": "StockSage AI",
+  "description": "An intelligent inventory management system that predicts supply shortages and provides actionable insights using Gemini AI.",
+  "requestFramePermissions": []
+}

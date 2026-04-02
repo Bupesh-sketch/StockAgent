@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "An inventory item with stock levels and pricing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "currentStock": { "type": "number" },
+        "reorderPoint": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "lastRestocked": { "type": "string", "format": "date-time" },
+        "sku": { "type": "string" }
+      },
+      "required": ["name", "category", "currentStock", "reorderPoint", "unitPrice", "sku"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A record of stock movement (in or out).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "type": { "type": "string", "enum": ["in", "out"] },
+        "quantity": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "type", "quantity", "timestamp"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "A notification about low stock or predicted shortages.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "message": { "type": "string" },
+        "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "productName", "message", "severity", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Main inventory collection."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "History of stock movements."
+    },
+    "/alerts/{alertId}": {
+      "schema": "Alert",
+      "description": "System-generated notifications."
+    }
+  }
+}
