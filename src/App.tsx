@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import Papa from 'papaparse';
 import { 
   LayoutDashboard, 
   Package, 
@@ -24,6 +25,8 @@ import {
   AlertCircle,
   History,
   ArrowDownRight,
+  Download,
+  Upload,
   User as UserIcon,
   Shield,
   Building2,
@@ -97,6 +100,7 @@ export default function App() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Clear notification after 5 seconds
   useEffect(() => {
@@ -179,6 +183,115 @@ export default function App() {
     };
   }, [user]);
 
+  // Automatic Alert Generation & Cleanup (Low Stock & Expiry)
+  useEffect(() => {
+    if (!user || products.length === 0) return;
+
+    const syncSystemAlerts = async () => {
+      const now = new Date();
+      const warningThreshold = userProfile?.warningThreshold || 90;
+      const thresholdDate = new Date();
+      thresholdDate.setDate(now.getDate() + warningThreshold);
+
+      // 1. Cleanup: Remove alerts that are no longer valid
+      for (const alert of alerts) {
+        if (alert.type !== 'system') continue;
+
+        const product = products.find(p => p.id === alert.productId);
+        let shouldDelete = false;
+
+        if (!product) {
+          shouldDelete = true; // Product deleted
+        } else {
+          if (alert.message?.includes('stock')) {
+            // Check if stock is now healthy
+            if (product.currentStock > product.reorderPoint) {
+              shouldDelete = true;
+            }
+          } else if (alert.message?.includes('expire')) {
+            // Check if expiry is now safe or removed
+            if (!product.expiryDate) {
+              shouldDelete = true;
+            } else {
+              const expiryDate = new Date(product.expiryDate);
+              if (expiryDate > thresholdDate) {
+                shouldDelete = true;
+              }
+            }
+          }
+        }
+
+        if (shouldDelete) {
+          try {
+            await deleteDoc(doc(db, 'alerts', alert.id));
+          } catch (e) {
+            console.error("Failed to cleanup alert", e);
+          }
+        }
+      }
+
+      // 2. Generation: Add missing alerts
+      const newAlerts: any[] = [];
+      for (const product of products) {
+        // Low Stock Alert
+        if (product.currentStock <= product.reorderPoint) {
+          const severity = product.currentStock === 0 ? 'high' : 'medium';
+          const message = product.currentStock === 0 
+            ? `CRITICAL: ${product.name} is out of stock!` 
+            : `Low Stock: ${product.name} has only ${product.currentStock} units left (Reorder point: ${product.reorderPoint}).`;
+          
+          const existing = alerts.find(a => a.productId === product.id && a.message?.includes(product.currentStock === 0 ? 'out of stock' : 'Low Stock'));
+          
+          if (!existing) {
+            newAlerts.push({
+              productId: product.id,
+              productName: product.name,
+              message,
+              severity,
+              timestamp: now.toISOString(),
+              type: 'system'
+            });
+          }
+        }
+
+        // Expiry Alert
+        if (product.expiryDate) {
+          const expiryDate = new Date(product.expiryDate);
+          if (expiryDate <= thresholdDate) {
+            const isExpired = expiryDate <= now;
+            const severity = isExpired ? 'high' : 'medium';
+            const message = isExpired 
+              ? `EXPIRED: ${product.name} expired on ${expiryDate.toLocaleDateString()}. Remove from inventory immediately!` 
+              : `Expiring Soon: ${product.name} will expire on ${expiryDate.toLocaleDateString()} (in less than ${warningThreshold} days).`;
+
+            const existing = alerts.find(a => a.productId === product.id && a.message?.includes(isExpired ? 'EXPIRED' : 'Expiring Soon'));
+            
+            if (!existing) {
+              newAlerts.push({
+                productId: product.id,
+                productName: product.name,
+                message,
+                severity,
+                timestamp: now.toISOString(),
+                type: 'system'
+              });
+            }
+          }
+        }
+      }
+
+      for (const alert of newAlerts) {
+        try {
+          await addDoc(collection(db, 'alerts'), alert);
+        } catch (e) {
+          console.error("Failed to add system alert", e);
+        }
+      }
+    };
+
+    syncSystemAlerts();
+  }, [products, alerts, user, userProfile?.warningThreshold]);
+
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -198,12 +311,32 @@ export default function App() {
   const handleSaveProduct = async (productData: Partial<Product>) => {
     try {
       if (editingProduct) {
+        // Record restock if quantity increased
+        if (productData.currentStock !== undefined && productData.currentStock > editingProduct.currentStock) {
+          await addDoc(collection(db, 'transactions'), {
+            productId: editingProduct.id,
+            productName: productData.name || editingProduct.name,
+            type: 'in',
+            quantity: productData.currentStock - editingProduct.currentStock,
+            timestamp: new Date().toISOString()
+          });
+        }
         await updateDoc(doc(db, 'products', editingProduct.id), productData);
       } else {
-        await addDoc(collection(db, 'products'), {
+        const docRef = await addDoc(collection(db, 'products'), {
           ...productData,
           lastRestocked: new Date().toISOString()
         });
+        // Record initial stock as a transaction
+        if (productData.currentStock && productData.currentStock > 0) {
+          await addDoc(collection(db, 'transactions'), {
+            productId: docRef.id,
+            productName: productData.name,
+            type: 'in',
+            quantity: productData.currentStock,
+            timestamp: new Date().toISOString()
+          });
+        }
       }
       setIsProductModalOpen(false);
       setEditingProduct(null);
@@ -228,6 +361,119 @@ export default function App() {
       setNotification({ type: 'error', message: 'Failed to delete product. Please check your permissions.' });
       handleFirestoreError(error, OperationType.DELETE, 'products');
     }
+  };
+
+  const handleExportCSV = () => {
+    if (products.length === 0) {
+      setNotification({ type: 'error', message: 'No products to export.' });
+      return;
+    }
+
+    const headers = [
+      'ID', 'Name', 'SKU', 'Type', 'Category', 'Current Stock', 
+      'Reorder Point', 'Unit Price', 'Expiry Date', 'Batch Number', 
+      'Dosage Form', 'Last Restocked'
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...products.map(p => [
+        p.id,
+        `"${p.name.replace(/"/g, '""')}"`,
+        p.sku,
+        p.type,
+        `"${p.category.replace(/"/g, '""')}"`,
+        p.currentStock,
+        p.reorderPoint,
+        p.unitPrice,
+        p.expiryDate || 'N/A',
+        p.batchNumber || 'N/A',
+        p.dosageForm || 'N/A',
+        p.lastRestocked
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `inventory_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setNotification({ type: 'success', message: 'Inventory exported successfully!' });
+  };
+
+  const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const data = results.data as any[];
+        let importedCount = 0;
+        let errorCount = 0;
+
+        for (const row of data) {
+          try {
+            // Basic mapping and validation
+            const productData: Partial<Product> = {
+              name: row.Name || row.name || 'Unnamed Product',
+              sku: row.SKU || row.sku || `SKU-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              type: (row.Type || row.type || 'general').toLowerCase() as any,
+              category: row.Category || row.category || 'Uncategorized',
+              currentStock: parseInt(row['Current Stock'] || row.currentStock || '0'),
+              reorderPoint: parseInt(row['Reorder Point'] || row.reorderPoint || '10'),
+              unitPrice: parseFloat(row['Unit Price'] || row.unitPrice || '0'),
+              expiryDate: row['Expiry Date'] || row.expiryDate || '',
+              batchNumber: row['Batch Number'] || row.batchNumber || '',
+              dosageForm: row['Dosage Form'] || row.dosageForm || '',
+              lastRestocked: new Date().toISOString()
+            };
+
+            // Add to Firestore
+            const docRef = await addDoc(collection(db, 'products'), productData);
+            
+            // Record initial stock as a transaction
+            if (productData.currentStock && productData.currentStock > 0) {
+              await addDoc(collection(db, 'transactions'), {
+                productId: docRef.id,
+                productName: productData.name,
+                type: 'in',
+                quantity: productData.currentStock,
+                timestamp: new Date().toISOString()
+              });
+            }
+            importedCount++;
+          } catch (e) {
+            console.error("Failed to import row", row, e);
+            errorCount++;
+          }
+        }
+
+        if (errorCount > 0) {
+          setNotification({ 
+            type: 'error', 
+            message: `Imported ${importedCount} items. ${errorCount} items failed.` 
+          });
+        } else {
+          setNotification({ 
+            type: 'success', 
+            message: `Successfully imported ${importedCount} items!` 
+          });
+        }
+        
+        // Reset file input
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
+      error: (error) => {
+        console.error("CSV Parse Error", error);
+        setNotification({ type: 'error', message: 'Failed to parse CSV file.' });
+      }
+    });
   };
 
   const handleRunPredictions = async () => {
@@ -269,7 +515,38 @@ export default function App() {
     setIsChatLoading(true);
 
     try {
-      const aiResponse = await getInventoryAdvice(userMsg, products);
+      const aiResponse = await getInventoryAdvice(userMsg, products, async (name, args) => {
+        if (name === 'add_new_product') {
+          try {
+            await handleSaveProduct(args);
+            return { success: true, message: "Product added to inventory" };
+          } catch (e) {
+            return { success: false, error: String(e) };
+          }
+        }
+        if (name === 'update_stock_level') {
+          try {
+            const product = products.find(p => p.id === args.productId);
+            if (!product) return { success: false, error: "Product not found" };
+            
+            if (args.quantity > 0) {
+              // Restock
+              await handleSaveProduct({ ...product, currentStock: product.currentStock + args.quantity });
+              return { success: true, message: `Restocked ${args.quantity} units of ${product.name}` };
+            } else {
+              // Sale
+              if (product.currentStock < Math.abs(args.quantity)) {
+                return { success: false, error: "Insufficient stock" };
+              }
+              await handleRecordSale(args.productId, Math.abs(args.quantity));
+              return { success: true, message: `Recorded sale of ${Math.abs(args.quantity)} units of ${product.name}` };
+            }
+          } catch (e) {
+            return { success: false, error: String(e) };
+          }
+        }
+        return { success: false, error: "Unknown tool" };
+      });
       setChatMessages(prev => [...prev, { role: 'ai', content: aiResponse }]);
     } catch (error) {
       setChatMessages(prev => [...prev, { role: 'ai', content: "I'm sorry, I'm having trouble connecting to my brain right now." }]);
@@ -352,6 +629,7 @@ export default function App() {
       // Record transaction
       await addDoc(collection(db, 'transactions'), {
         productId,
+        productName: product.name,
         type: 'out',
         quantity,
         timestamp: new Date().toISOString()
@@ -363,6 +641,25 @@ export default function App() {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'transactions');
+    }
+  };
+
+  const handleClearAlert = async (alertId: string) => {
+    try {
+      await deleteDoc(doc(db, 'alerts', alertId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'alerts');
+    }
+  };
+
+  const handleClearAllAlerts = async () => {
+    if (!window.confirm("Are you sure you want to clear all alerts?")) return;
+    try {
+      const batch = alerts.map(a => deleteDoc(doc(db, 'alerts', a.id)));
+      await Promise.all(batch);
+      setNotification({ type: 'success', message: 'All alerts cleared.' });
+    } catch (error) {
+      console.error("Failed to clear alerts", error);
     }
   };
 
@@ -599,7 +896,7 @@ export default function App() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-900 truncate">
-                                {t.type === 'in' ? 'Restocked' : 'Sold'} {product?.name || 'Unknown'}
+                                {t.type === 'in' ? 'Restocked' : 'Sold'} {t.productName || product?.name || 'Unknown Item'}
                               </p>
                               <p className="text-xs text-slate-500">
                                 {t.quantity} units • {new Date(t.timestamp).toLocaleTimeString()}
@@ -627,6 +924,27 @@ export default function App() {
                     <p className="text-slate-500 text-sm">Manage and track your stock across different categories.</p>
                   </div>
                   <div className="flex gap-3">
+                    <input 
+                      type="file" 
+                      accept=".csv" 
+                      className="hidden" 
+                      ref={fileInputRef}
+                      onChange={handleImportCSV}
+                    />
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-all hover:bg-slate-50 shadow-sm"
+                    >
+                      <Upload size={20} />
+                      <span>Import CSV</span>
+                    </button>
+                    <button 
+                      onClick={handleExportCSV}
+                      className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-all hover:bg-slate-50 shadow-sm"
+                    >
+                      <Download size={20} />
+                      <span>Export CSV</span>
+                    </button>
                     <button 
                       onClick={() => {
                         setEditingProduct(null);
@@ -674,11 +992,21 @@ export default function App() {
 
             {activeTab === 'alerts' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <h2 className="text-2xl font-bold">System Alerts</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold">System Alerts</h2>
+                  {alerts.length > 0 && (
+                    <button 
+                      onClick={handleClearAllAlerts}
+                      className="text-slate-500 hover:text-red-600 text-sm font-medium transition-colors"
+                    >
+                      Clear All Alerts
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 gap-4">
                   {alerts.map((alert) => (
                     <div key={alert.id} className={cn(
-                      "p-6 rounded-2xl border flex gap-4 items-start",
+                      "p-6 rounded-2xl border flex gap-4 items-start group relative",
                       alert.severity === 'high' ? "bg-red-50 border-red-100" : 
                       alert.severity === 'medium' ? "bg-amber-50 border-amber-100" : "bg-blue-50 border-blue-100"
                     )}>
@@ -692,7 +1020,16 @@ export default function App() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
                           <h4 className="font-bold text-slate-900">{alert.productName}</h4>
-                          <span className="text-xs text-slate-500">{new Date(alert.timestamp).toLocaleString()}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-slate-500">{new Date(alert.timestamp).toLocaleString()}</span>
+                            <button 
+                              onClick={() => handleClearAlert(alert.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                              title="Dismiss Alert"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-slate-600 text-sm leading-relaxed">{alert.message}</p>
                       </div>

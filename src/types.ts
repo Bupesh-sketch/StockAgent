@@ -19,6 +19,7 @@ export interface Product {
 export interface Transaction {
   id: string;
   productId: string;
+  productName?: string;
   type: 'in' | 'out';
   quantity: number;
   timestamp: string; // ISO date
@@ -31,6 +32,7 @@ export interface InventoryAlert {
   message: string;
   severity: 'low' | 'medium' | 'high';
   timestamp: string; // ISO date
+  type?: 'system' | 'ai';
 }
 
 export interface PredictionResult {
