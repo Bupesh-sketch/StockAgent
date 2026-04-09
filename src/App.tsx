@@ -56,6 +56,7 @@ import { Product, InventoryAlert, PredictionResult, Transaction } from './types'
 import { cn } from './lib/utils';
 import { InventoryList } from './components/InventoryList';
 import { ProductModal } from './components/ProductModal';
+import { SellModal } from './components/SellModal';
 import { predictShortages, getInventoryAdvice } from './lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -87,7 +88,9 @@ export default function App() {
   
   // UI State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isSellModalOpen, setIsSellModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [sellingProduct, setSellingProduct] = useState<Product | null>(null);
   const [isPredicting, setIsPredicting] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -329,6 +332,37 @@ export default function App() {
       setNotification({ type: 'success', message: 'Profile updated successfully!' });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'users');
+    }
+  };
+
+  const handleRecordSale = async (productId: string, quantity: number) => {
+    if (!user) return;
+    try {
+      const productRef = doc(db, 'products', productId);
+      const product = products.find(p => p.id === productId);
+      if (!product) return;
+
+      const newStock = product.currentStock - quantity;
+      
+      // Update product stock
+      await updateDoc(productRef, {
+        currentStock: newStock
+      });
+
+      // Record transaction
+      await addDoc(collection(db, 'transactions'), {
+        productId,
+        type: 'out',
+        quantity,
+        timestamp: new Date().toISOString()
+      });
+
+      setNotification({ 
+        type: 'success', 
+        message: `Successfully sold ${quantity} units of ${product.name}.` 
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'transactions');
     }
   };
 
@@ -629,6 +663,10 @@ export default function App() {
                   onEdit={(p) => {
                     setEditingProduct(p);
                     setIsProductModalOpen(true);
+                  }}
+                  onSell={(p) => {
+                    setSellingProduct(p);
+                    setIsSellModalOpen(true);
                   }}
                 />
               </div>
@@ -933,6 +971,16 @@ export default function App() {
         }}
         onSave={handleSaveProduct}
         onDelete={handleDeleteProduct}
+      />
+
+      <SellModal
+        isOpen={isSellModalOpen}
+        product={sellingProduct}
+        onClose={() => {
+          setIsSellModalOpen(false);
+          setSellingProduct(null);
+        }}
+        onSell={handleRecordSale}
       />
     </div>
   );

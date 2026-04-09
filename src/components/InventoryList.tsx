@@ -6,9 +6,10 @@ import { MoreVertical, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 interface InventoryListProps {
   products: Product[];
   onEdit?: (product: Product) => void;
+  onSell?: (product: Product) => void;
 }
 
-export function InventoryList({ products, onEdit }: InventoryListProps) {
+export function InventoryList({ products, onEdit, onSell }: InventoryListProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
@@ -84,12 +85,22 @@ export function InventoryList({ products, onEdit }: InventoryListProps) {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button 
-                      onClick={() => onEdit?.(product)}
-                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
-                    >
-                      <MoreVertical size={18} />
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => onSell?.(product)}
+                        className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                        title="Record Sale"
+                      >
+                        <ArrowDownRight size={18} />
+                      </button>
+                      <button 
+                        onClick={() => onEdit?.(product)}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                        title="Edit Product"
+                      >
+                        <MoreVertical size={18} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );

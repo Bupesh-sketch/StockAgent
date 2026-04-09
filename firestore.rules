@@ -47,19 +47,30 @@ service cloud.firestore {
         );
     }
 
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
     function isValidUser(data) {
       return data.email is string && isValidEmail(data.email) &&
              data.displayName is string &&
-             data.role in ['admin', 'user'];
+             data.role in ['admin', 'user'] &&
+             data.createdAt is string &&
+             (!('pharmacyName' in data) || data.pharmacyName is string) &&
+             (!('warningThreshold' in data) || data.warningThreshold is number) &&
+             (!('currency' in data) || data.currency is string);
     }
 
     function isValidProduct(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.category is string && data.category.size() > 0 &&
+             data.type in ['medicine', 'electronics', 'general'] &&
              data.currentStock is number && data.currentStock >= 0 &&
              data.reorderPoint is number && data.reorderPoint >= 0 &&
-             data.unitPrice is number && data.unitPrice >= 0 &&
-             data.sku is string && data.sku.size() > 0;
+             data.sku is string && data.sku.size() > 0 &&
+             (!('expiryDate' in data) || data.expiryDate is string) &&
+             (!('batchNumber' in data) || data.batchNumber is string) &&
+             (!('dosageForm' in data) || data.dosageForm is string);
     }
 
     function isValidTransaction(data) {
